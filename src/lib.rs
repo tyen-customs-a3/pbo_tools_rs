@@ -1,16 +1,12 @@
-pub mod api;
-pub mod binary;
-pub mod config;
+pub mod cli;
 pub mod core;
-pub mod errors;
+pub mod error;
 pub mod extract;
-pub mod file_ops;
+pub mod fs;
 
-pub use api::PboApi;
-pub use config::PboConfig;
-pub use errors::{PboError, ExtractError, FileSystemError, Result};
-
-pub type FileContent = std::collections::HashMap<String, String>;
+pub use core::api::PboApi;
+pub use core::config::PboConfig;
+pub use error::types::{PboError, ExtractError, FileSystemError, Result};
 
 /// Version of the library
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

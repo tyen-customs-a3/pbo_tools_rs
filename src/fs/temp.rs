@@ -4,12 +4,12 @@ use std::sync::Mutex;
 use std::ops::Deref;
 use log::warn;
 use uuid::Uuid;
-use crate::errors::{PboError, FileSystemError, Result};
+use crate::error::types::{PboError, FileSystemError, Result};
 
 #[derive(Debug)]
 pub struct TempDir {
     path: PathBuf,
-    _guard: (),  // Private field to prevent construction outside of this module
+    _guard: (),
 }
 
 impl TempDir {
@@ -61,10 +61,24 @@ impl Deref for TempDir {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct TempFileManager {
     temp_base: PathBuf,
     active_dirs: Mutex<HashSet<PathBuf>>,
+}
+
+impl Clone for TempFileManager {
+    fn clone(&self) -> Self {
+        // Create a new HashSet with the same contents
+        let current_dirs = self.active_dirs.lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
+        
+        Self {
+            temp_base: self.temp_base.clone(),
+            active_dirs: Mutex::new(current_dirs),
+        }
+    }
 }
 
 impl TempFileManager {

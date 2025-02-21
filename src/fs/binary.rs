@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 use encoding_rs::WINDOWS_1252;
-use crate::errors::{PboError, FileSystemError, Result};
+use crate::error::types::{PboError, FileSystemError, Result};
 
 #[derive(Debug)]
 pub struct BinaryContent(Vec<u8>);
@@ -17,12 +17,10 @@ impl BinaryContent {
     }
 
     pub fn decode_text(&self) -> Result<String> {
-        // First try UTF-8 for efficiency
         if let Ok(text) = String::from_utf8(self.0.clone()) {
             return Ok(text);
         }
 
-        // Check for binary content before trying Windows-1252
         if self.appears_binary() {
             return Err(PboError::Encoding {
                 context: "Content appears to be binary data".to_string(),
@@ -30,7 +28,6 @@ impl BinaryContent {
             });
         }
 
-        // Try Windows-1252 as fallback
         let (cow, _, had_errors) = WINDOWS_1252.decode(&self.0);
         if had_errors {
             return Err(PboError::Encoding {
@@ -47,9 +44,8 @@ impl BinaryContent {
             return false;
         }
 
-        // More comprehensive binary detection
         let sample_size = std::cmp::min(512, self.0.len());
-        let null_byte_threshold = 0.3; // 30% null bytes indicates binary
+        let null_byte_threshold = 0.3;
         let null_bytes = self.0[..sample_size]
             .iter()
             .filter(|&&b| b == 0)

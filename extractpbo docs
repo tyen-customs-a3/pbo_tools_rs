@@ -1,0 +1,102 @@
+Usage
+
+extractpbo [-options...] NameOfPbo[.pbo|.xbo|.ebo]/aFolder/AnExtractionList [SomeFolder]
+
+    like all mikero tools, -options are case insensitive.
+    like all mikero tools, typing 'extractpbo' with no cmdline arguments will display syntax
+
+.extensions are not required. a 'pbo' is considered to be ANY .xbo,.ebo,*pbo
+
+    -F | filelist[,...] name(s) of file(s) to extract. Extracted file(s) will appear in their 'correct' position in the relevent output folder tree. Thus, multiple instances of config.cpp (eg) can be extracted. A minor form of wildcard the aster dot sequence can indicate 'all' extensions of that type.
+    -L | List contents only (do not extract)
+    -LB | brief dir style output
+    -N | Noisy
+    -P | Don't pause
+    -W | Warnings are errors
+
+Output folder
+
+Distinctions exist between folder output for OFP vs non OFP (ARMA)
+
+    In OFP the NameOfPbo is sacrosanct. It must form part of the output to have any meaning to the engine.
+    In ARMA the prefix inside the pbo is sacrosanct. It will form part of the output.
+
+The dll detects the difference.
+
+Thus:
+For OFP:
+extractppo thing.pbo >> contents to thing\
+
+extractpbo thing.pbo anywhere >> contents to anywhere\thing\
+
+For ARMA:
+
+extractppo thing.pbo >> contents to thing'prefix'\
+
+extractpbo thing.pbo drive:\anywhere >> contents to contents to anywhere'prefix'\
+
+The anywhere clause for arma allows creation of a p:\ca by specifying
+
+extractpbo thing P:\
+
+Be WARNED
+
+Extractpbo will add folders to existing ones, BUT, it will NOT over-write exisitng content.
+
+If you specify an 'interesting' destination. you will get, 'interesting' results.
+Extraction behaviour
+
+** Fundamentally, a folder is created of the same name as the pbo in the same folder as the pbo.
+
+** Arma pbo's will, in addition, create subfolders based on the detected prefix. Thus:
+ExtractPbo Thing
+
+OFP: pbo thing.pbo -> thing...
+
+ARMA: pbo thing.pbo -> thing\Prefix...
+Specifying a destination
+
+ExtractPbo thing P:\
+
+thing.pbo ->P:\prefix... Will create a perfect namespace based on the prefix.
+
+ExtractPbo thing -k P:\
+
+thing.pbo ->P:\thing\prefix...
+
+ExtractPbo thing P:\SomeWhere
+
+thing.pbo ->P:\Somewhere\prefix...
+
+ExtractPbo -K thing P:\SomeWhere
+
+thing.pbo ->P:\Somewhere\thing...
+Specifying a relative destination address
+
+You can't. drive: MUST be specified
+Other examples
+
+extractpbo thing
+Will extract thing.pbo to thing\ folder and derapify any content (such as mission.sqm) that has been binarised.
+
+extractpbo -L thing
+Does a dir listing of pbo content along with added info.
+
+extractpbo Folder [toSomewhere]
+Will recurse subfolders of above searching for pbo files.
+Warning messages
+
+"1st/last entry has non-zero real_size, reserved, or BlockLength field"
+
+"reserved field non zero anywhere in entry bodies (except xbo)"
+
+    Normally an attempt to prevent extraction and should present no issues. But, users should suspect something wonky in the author's implementation.
+
+"no shakey on arma"
+Early pbo makers did not create the appended 21 byte sha. This causes issues only if attempting to sign the pbo for MP play.
+
+"residual bytes in file" // throws an error anyway
+Something has been either misinterpreted, or the pbo maker is at fault
+
+"arma pbo is missing a prefix (probably a mission)";
+Missions do not require prefix entries. But, as a matter of de-riguer, they normally have them.
