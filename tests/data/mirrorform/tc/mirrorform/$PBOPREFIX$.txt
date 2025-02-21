@@ -1,0 +1,6 @@
+//<'mirrorform.pbo' properties via Mikero's dos tools, dll version 9.98>
+prefix=tc\mirrorform;
+Mikero=DePbo.dll.9.93;
+version=25011610;
+//PboType=Arma Addon;
+//</properties>
