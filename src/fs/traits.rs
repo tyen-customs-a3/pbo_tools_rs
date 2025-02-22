@@ -1,5 +1,6 @@
 use std::path::Path;
 use std::fs::{create_dir_all, remove_dir_all, remove_file};
+use log::{debug, warn};
 use crate::error::types::{Result, PboError, FileSystemError};
 
 pub trait FileOperation {
@@ -13,13 +14,32 @@ pub trait FileOperation {
 
 impl FileOperation for Path {
     fn validate_path(&self) -> Result<()> {
-        if !self.exists() && !self.to_str().map(|s| s.starts_with(".tmp")).unwrap_or(false) {
-            return Err(PboError::InvalidPath(self.to_path_buf()));
+        debug!("Validating path: {}", self.display());
+        
+        // For source PBO files, check existence
+        if self.extension().map_or(false, |ext| ext == "pbo") {
+            debug!("Checking PBO file existence");
+            if !self.exists() {
+                warn!("PBO file not found: {}", self.display());
+                return Err(PboError::InvalidPath(self.to_path_buf()));
+            }
         }
+        
+        // For all paths, check safety and filename validity
         if !self.is_safe_path() {
+            warn!("Path failed safety check: {}", self.display());
             return Err(PboError::InvalidPath(self.to_path_buf()));
         }
-        self.validate_filename()?;
+
+        match self.validate_filename() {
+            Ok(_) => debug!("Filename validation passed for: {}", self.display()),
+            Err(e) => {
+                warn!("Filename validation failed for {}: {:?}", self.display(), e);
+                return Err(e);
+            }
+        }
+
+        debug!("Path validation successful: {}", self.display());
         Ok(())
     }
 
@@ -59,33 +79,55 @@ impl FileOperation for Path {
 
     fn is_safe_path(&self) -> bool {
         let path_str = self.to_str().unwrap_or("");
-        
+        debug!("Checking path safety for: {}", path_str);
+
         // Check for common directory traversal patterns
         if path_str.contains("..") || path_str.contains("//") {
+            debug!("Rejecting path with directory traversal");
             return false;
         }
 
         // Check for suspicious characters in path
         let suspicious_chars = ['<', '>', '|', '*', '?', '"', '`', '$', '&', '{', '}', ';', '#', '='];
         if path_str.chars().any(|c| suspicious_chars.contains(&c)) {
+            debug!("Rejecting path with suspicious characters");
             return false;
         }
 
-        // Check for absolute paths that might be unsafe
+        // Handle Windows paths
         #[cfg(windows)]
-        if path_str.starts_with("\\\\") || path_str.contains("://") || path_str.contains(":") {
-            return false;
+        {
+            // Allow only drive letter colons (C:\)
+            let colon_positions: Vec<_> = path_str.match_indices(':').map(|(i, _)| i).collect();
+            match colon_positions.len() {
+                0 => (),  // No colons is fine
+                1 if colon_positions[0] == 1 => (), // Single colon at position 1 is fine (drive letter)
+                _ => {
+                    debug!("Rejecting path with invalid colon placement");
+                    return false;
+                }
+            }
+
+            // Reject UNC paths and other potentially unsafe Windows paths
+            if path_str.starts_with("\\\\") || path_str.contains("://") {
+                debug!("Rejecting UNC or URL-like path");
+                return false;
+            }
         }
-        #[cfg(unix)]
-        if path_str.starts_with("/") || path_str.contains("://") {
+
+        #[cfg(not(windows))]
+        if path_str.contains(':') {
+            debug!("Rejecting path with colon on non-Windows system");
             return false;
         }
 
         // Check for null bytes and control characters
         if path_str.chars().any(|c| c.is_control()) {
+            debug!("Rejecting path with control characters");
             return false;
         }
 
+        debug!("Path passed safety check");
         true
     }
 

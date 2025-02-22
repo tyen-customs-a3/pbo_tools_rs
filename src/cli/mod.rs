@@ -46,6 +46,7 @@ impl CliProcessor {
             Commands::Extract { pbo_path, output_dir, filter } => {
                 debug!("Extracting from PBO: {} to {}", pbo_path.display(), output_dir.display());
                 debug!("Using filter: {:?}", filter);
+                debug!("Current directory: {:?}", std::env::current_dir().unwrap_or_default());
                 
                 // Ensure output directory exists
                 std::fs::create_dir_all(&output_dir)
@@ -54,26 +55,31 @@ impl CliProcessor {
                         reason: e.to_string(),
                     }))?;
 
-                self.api.extract_files(&pbo_path, &output_dir, filter.as_deref())
-                    .and_then(|result| {
-                        if result.is_success() {
-                            println!("Extracted files:");
-                            for file in result.get_file_list() {
-                                println!("  {}", file);
-                            }
-                            if let Some(prefix) = result.get_prefix() {
-                                println!("\nPBO Prefix: {}", prefix);
-                            }
-                            Ok(())
-                        } else {
-                            Err(PboError::Extraction(result.get_error_message()
-                                .map(|msg| crate::error::types::ExtractError::CommandFailed {
-                                    cmd: "extractpbo".to_string(),
-                                    reason: msg,
-                                })
-                                .unwrap_or_else(|| crate::error::types::ExtractError::NoFiles)))
+                debug!("Created output directory: {}", output_dir.display());
+
+                let result = self.api.extract_files(&pbo_path, &output_dir, filter.as_deref());
+                debug!("Extract result: {:?}", result);
+                
+                result.and_then(|result| {
+                    if result.is_success() {
+                        println!("Extracted files:");
+                        for file in result.get_file_list() {
+                            println!("  {}", file);
                         }
-                    })
+                        if let Some(prefix) = result.get_prefix() {
+                            println!("\nPBO Prefix: {}", prefix);
+                        }
+                        Ok(())
+                    } else {
+                        debug!("Extraction failed: {}", result);
+                        Err(PboError::Extraction(result.get_error_message()
+                            .map(|msg| crate::error::types::ExtractError::CommandFailed {
+                                cmd: "extractpbo".to_string(),
+                                reason: msg,
+                            })
+                            .unwrap_or_else(|| crate::error::types::ExtractError::NoFiles)))
+                    }
+                })
             }
         }
     }
@@ -84,11 +90,13 @@ mod tests {
     use super::*;
     use std::path::PathBuf;
     use tempfile::tempdir;
+    use crate::test_utils;
 
     #[test]
     fn test_cli_list_command() {
-        let cli = CliProcessor::new(30);
-        let test_pbo = PathBuf::from("tests/data/mirrorform.pbo");
+        test_utils::setup();
+        let cli = CliProcessor::new(10);
+        let test_pbo = test_utils::get_test_pbo_path();
         let result = cli.process_command(Commands::List { 
             pbo_path: test_pbo 
         });
@@ -97,8 +105,9 @@ mod tests {
 
     #[test]
     fn test_cli_extract_command() {
-        let cli = CliProcessor::new(30);
-        let test_pbo = PathBuf::from("tests/data/mirrorform.pbo");
+        test_utils::setup();
+        let cli = CliProcessor::new(10);
+        let test_pbo = test_utils::get_test_pbo_path();
         let temp_dir = tempdir().unwrap();
         
         let result = cli.process_command(Commands::Extract { 
@@ -111,6 +120,7 @@ mod tests {
 
     #[test]
     fn test_cli_with_invalid_paths() {
+        test_utils::setup();
         let cli = CliProcessor::new(30);
         let invalid_pbo = PathBuf::from("nonexistent.pbo");
         

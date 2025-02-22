@@ -35,7 +35,7 @@ impl BinaryContent {
         }
 
         // Then try Windows-1252 if it's not binary
-        if (!self.appears_binary()) {
+        if !self.appears_binary() {
             let (cow, _, had_errors) = WINDOWS_1252.decode(&self.0);
             if !had_errors && !cow.contains('\0') {
                 return Ok(cow.into_owned());
@@ -54,14 +54,17 @@ impl BinaryContent {
 
     fn appears_binary(&self) -> bool {
         if self.0.is_empty() {
+            debug!("Empty content, not binary");
             return false;
         }
 
         // Statistical analysis for binary content
         let sample_size = std::cmp::min(1024, self.0.len());
-        let null_byte_threshold = 0.1;  // Lower threshold to catch more binary files
-        let control_char_threshold = 0.15;
-        let byte_distribution_threshold = 0.7; // High concentration of specific byte ranges
+        debug!("Analyzing {} bytes for binary detection", sample_size);
+        
+        let null_byte_threshold = 0.05;  // Lowered threshold - even a few null bytes suggest binary
+        let control_char_threshold = 0.10; // Lowered threshold for control characters
+        let byte_distribution_threshold = 0.3; // Lowered - text files rarely have such high concentrations
 
         let mut byte_counts = [0u32; 256];
         let mut null_bytes = 0;
@@ -72,15 +75,17 @@ impl BinaryContent {
             byte_counts[byte as usize] += 1;
             if byte == 0 {
                 null_bytes += 1;
-            } else if (byte < 32 && byte != 9 && byte != 10 && byte != 13) || byte == 127 {
+            } else if byte < 9 || (byte > 13 && byte < 32) || byte == 127 {
                 control_chars += 1;
             }
         }
 
         // Check for byte distribution anomalies that suggest binary content
         let max_byte_freq = *byte_counts.iter().max().unwrap_or(&0) as f64 / sample_size as f64;
+        debug!("Max byte frequency: {:.2}", max_byte_freq);
         if max_byte_freq > byte_distribution_threshold {
-            debug!("Binary content detected: unusual byte distribution");
+            debug!("Binary content detected: unusual byte distribution (max freq: {:.2} > threshold {:.2})", 
+                max_byte_freq, byte_distribution_threshold);
             return true;
         }
 
@@ -88,22 +93,39 @@ impl BinaryContent {
         let null_byte_ratio = null_bytes as f64 / sample_size as f64;
         let control_char_ratio = control_chars as f64 / sample_size as f64;
 
+        debug!("Null byte ratio: {:.2}, Control char ratio: {:.2}", 
+            null_byte_ratio, control_char_ratio);
+
         if null_byte_ratio > null_byte_threshold {
-            debug!("Binary content detected: high null byte ratio ({})", null_byte_ratio);
+            debug!("Binary content detected: high null byte ratio ({:.2} > threshold {:.2})", 
+                null_byte_ratio, null_byte_threshold);
             return true;
         }
 
         if control_char_ratio > control_char_threshold {
-            debug!("Binary content detected: high control char ratio ({})", control_char_ratio);
+            debug!("Binary content detected: high control char ratio ({:.2} > threshold {:.2})", 
+                control_char_ratio, control_char_threshold);
             return true;
         }
 
-        // Check for UTF-16/UTF-32 BOMs
-        if self.0.windows(2).any(|w| w == [0xFF, 0xFE] || w == [0xFE, 0xFF]) {
-            debug!("Binary content detected: UTF-16 BOM");
-            return true;
+        // Check for common binary file signatures
+        if self.0.len() >= 2 {
+            let first_bytes = &self.0[0..2];
+            debug!("Checking file signature: [{:02X}, {:02X}]", first_bytes[0], first_bytes[1]);
+            
+            if first_bytes == [0xFF, 0xD8] || // JPEG
+               first_bytes == [0x42, 0x4D] || // BMP
+               first_bytes == [0x89, 0x50] || // PNG
+               first_bytes == [0x50, 0x4B] || // ZIP/DOCX/etc
+               first_bytes == [0xFF, 0xFE] || // UTF-16 LE BOM
+               first_bytes == [0xFE, 0xFF]    // UTF-16 BE BOM
+            {
+                debug!("Binary content detected: file signature match");
+                return true;
+            }
         }
 
+        debug!("Content appears to be text");
         false
     }
 

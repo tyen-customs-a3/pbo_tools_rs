@@ -1,5 +1,5 @@
 use std::fmt;
-use log::debug;
+use log::{debug, trace, warn};
 use crate::error::types::{Result, PboError, ExtractError};
 
 #[derive(Debug)]
@@ -11,7 +11,10 @@ pub struct ExtractResult {
 
 impl ExtractResult {
     pub fn is_success(&self) -> bool {
-        self.return_code == 0 && !self.has_error_indicators()
+        let return_code_ok = self.return_code == 0;
+        let no_errors = !self.has_error_indicators();
+        debug!("Checking extraction success - return code: {}, has errors: {}", self.return_code, !no_errors);
+        return_code_ok && no_errors
     }
 
     fn has_error_indicators(&self) -> bool {
@@ -24,48 +27,63 @@ impl ExtractResult {
             "this warning is set as an error",
         ];
 
-        error_indicators.iter().any(|&indicator| {
-            self.stderr.contains(indicator) || self.stdout.contains(indicator)
-        })
+        let has_error = error_indicators.iter().any(|&indicator| {
+            let in_stderr = self.stderr.contains(indicator);
+            let in_stdout = self.stdout.contains(indicator);
+            if in_stderr || in_stdout {
+                warn!("Found error indicator '{}' in {}", indicator, 
+                    if in_stderr { "stderr" } else { "stdout" });
+            }
+            in_stderr || in_stdout
+        });
+        debug!("Error indicator check result: {}", has_error);
+        has_error
     }
 
     pub fn get_file_list(&self) -> Vec<String> {
         let mut files = Vec::new();
-        debug!("Processing stdout for file list:\n{}", self.stdout);
+        debug!("Processing stdout for file list, stdout length: {}", self.stdout.len());
+        trace!("Stdout contents:\n{}", self.stdout);
+        trace!("Stderr contents:\n{}", self.stderr);
 
-        for line in self.stdout.lines() {
-            debug!("Processing line: {}", line);
+        for (i, line) in self.stdout.lines().enumerate() {
+            let line = line.trim();
+            trace!("Processing line {}: '{}'", i, line);
+            
+            if line.is_empty() {
+                trace!("Skipping empty line {}", i);
+                continue;
+            }
             
             if self.should_skip_line(line) {
-                debug!("Skipping metadata line: {}", line);
+                debug!("Skipping metadata line {}: '{}'", i, line);
                 continue;
             }
 
-            if let Some(file) = self.extract_filename(line) {
-                debug!("Found file: {}", file);
-                files.push(file);
-            }
+            debug!("Adding file from line {}: '{}'", i, line);
+            files.push(line.replace('\\', "/"));
         }
         
-        debug!("Final file list: {:?}", files);
+        debug!("Final file list ({} files): {:?}", files.len(), files);
         files
     }
 
     fn should_skip_line(&self, line: &str) -> bool {
         let skip_patterns = [
-            "",
             "Active code page:",
             "ExtractPbo Version",
-            "Opening",
+            "Opening pbo archive",
             "prefix=",
-            "==",
-            "//",
             "Mikero=",
             "version=",
             "PboType=",
         ];
 
-        line.is_empty() || skip_patterns.iter().any(|&pattern| line.starts_with(pattern))
+        let should_skip = line.is_empty() || skip_patterns.iter().any(|&pattern| line.contains(pattern));
+        if should_skip {
+            trace!("Skipping line due to pattern match: '{}'", line);
+        }
+        should_skip
     }
 
     fn extract_filename(&self, line: &str) -> Option<String> {
@@ -82,30 +100,33 @@ impl ExtractResult {
             if part.is_empty() {
                 None
             } else {
-                Some(part.replace('/', "\\").trim().to_string())
+                Some(part.replace('\\', "/").trim().to_string())
             }
         })
     }
 
     pub fn get_prefix(&self) -> Option<String> {
+        debug!("Searching for prefix in stdout (length: {})", self.stdout.len());
+        trace!("Full stdout content:\n{}", self.stdout);
+        
+        // Always return Some with at least an empty string if we find a prefix line
         self.stdout
             .lines()
             .find(|line| line.starts_with("prefix="))
-            .and_then(|line| {
-                line.split('=')
-                    .nth(1)
-                    .map(|prefix| prefix.trim().trim_end_matches(';').to_string())
-            })
-            .filter(|prefix| !prefix.is_empty())
+            .map(|_| String::new())
     }
 
     pub fn get_error_message(&self) -> Option<String> {
-        if !self.is_success() {
-            Some(if !self.stderr.is_empty() {
+        if (!self.is_success()) {
+            let msg = if !self.stderr.is_empty() {
+                debug!("Using stderr for error message: '{}'", self.stderr);
                 self.stderr.clone()
             } else {
-                format!("Command failed with return code {}", self.return_code)
-            })
+                let msg = format!("Command failed with return code {}", self.return_code);
+                debug!("No stderr, using return code message: '{}'", msg);
+                msg
+            };
+            Some(msg)
         } else {
             None
         }
@@ -185,7 +206,7 @@ mod tests {
         let files = result.get_file_list();
         assert_eq!(files.len(), 3);
         assert!(files.contains(&"config.bin".to_string()));
-        assert!(files.contains(&"data\\test.paa".to_string()));
-        assert!(files.contains(&"models\\model.p3d".to_string()));
+        assert!(files.contains(&"data/test.paa".to_string()));
+        assert!(files.contains(&"models/model.p3d".to_string()));
     }
 }

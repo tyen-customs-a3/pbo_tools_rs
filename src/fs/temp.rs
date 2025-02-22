@@ -144,22 +144,37 @@ impl TempFileManager {
     }
 
     fn cleanup_old_dirs(&self) -> Result<()> {
+        debug!("Starting cleanup of old temp directories");
+        let now = SystemTime::now();
+        
         if let Ok(mut active_dirs) = self.active_dirs.lock() {
+            debug!("Current active directories count: {}", active_dirs.len());
+            
             let expired: Vec<_> = active_dirs
                 .iter()
                 .filter(|path| {
-                    path.metadata()
-                        .and_then(|m| m.created())
-                        .map(|created| {
-                            SystemTime::now()
-                                .duration_since(created)
-                                .map(|age| age > self.max_age)
-                                .unwrap_or(false)
-                        })
-                        .unwrap_or(false)
+                    debug!("Checking expiration for: {}", path.display());
+                    if let Ok(metadata) = path.metadata() {
+                        if let Ok(created) = metadata.created() {
+                            if let Ok(age) = now.duration_since(created) {
+                                let is_expired = age > self.max_age;
+                                debug!("Directory age: {:?}, max age: {:?}, expired: {}", age, self.max_age, is_expired);
+                                return is_expired;
+                            } else {
+                                warn!("Failed to calculate age for: {}", path.display());
+                            }
+                        } else {
+                            warn!("Failed to get creation time for: {}", path.display());
+                        }
+                    } else {
+                        warn!("Failed to get metadata for: {}", path.display());
+                    }
+                    true // Consider it expired if we can't determine age
                 })
                 .cloned()
                 .collect();
+
+            debug!("Found {} expired directories", expired.len());
 
             for path in expired {
                 debug!("Removing expired temp directory: {}", path.display());
@@ -167,7 +182,10 @@ impl TempFileManager {
                     warn!("Failed to remove expired temp dir {}: {}", path.display(), e);
                 }
                 active_dirs.remove(&path);
+                debug!("Removed {} from active set", path.display());
             }
+        } else {
+            warn!("Failed to acquire lock for active_dirs during cleanup");
         }
         
         Ok(())

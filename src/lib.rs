@@ -3,6 +3,8 @@ pub mod core;
 pub mod error;
 pub mod extract;
 pub mod fs;
+#[cfg(test)]
+pub mod test_utils;
 
 pub use core::api::PboApi;
 pub use core::config::PboConfig;
