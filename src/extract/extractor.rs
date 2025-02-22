@@ -5,30 +5,44 @@ use log::{debug, warn};
 use crate::error::{PboError, ExtractError, Result};
 use super::result::ExtractResult;
 
-/// ExtractPBO Command Line Arguments
+/// ExtractPBO Command Line Interface Documentation
 /// 
-/// PBO files can have extensions: .pbo, .xbo, .ebo, or any extension containing 'pbo'
-/// 
-/// Arguments:
-/// - `-F filelist[,...]`: Extract specific file(s). Files are extracted to their correct position 
-///   in the output folder tree. Supports basic wildcards (*.ext for all files with extension).
-///   Multiple files can be separated by commas.
-/// - `-L`: List contents only (do not extract)
-/// - `-LB`: Brief directory-style output listing
-/// - `-N`: Noisy (verbose) output
-/// - `-P`: Don't pause execution
-/// - `-W`: Treat warnings as errors
+/// Syntax: extractpbo [-options...] PboName[.pbo|.xbo|.ifa]|FolderName|Extraction.lst|.txt  [destination]
+///
+/// Important: The order of arguments matters!
+/// 1. Options must come before the PBO path
+/// 2. PBO path must come before destination path
+/// 3. Options can be catenated together (e.g. -PW instead of -P -W)
+///
+/// Arguments (in order):
+/// - Options: All options must start with - or +
+///   - `-P`: Don't pause execution
+///   - `-W`: Treat warnings as errors
+///   - `-F=filelist[,...]`: Extract specific file(s). Files are extracted to their correct position 
+///     in the output folder tree. Supports basic wildcards (*.ext for all files with extension).
+///     Multiple files can be separated by commas.
+///   - `-L`: List contents only (do not extract)
+///   - `-LB`: Brief directory-style output listing
+///   - `-N`: Noisy (verbose) output
+/// - PBO Path: Path to the source PBO file
+/// - Destination Path: Optional output directory path. Must include drive letter.
+///
+/// Examples:
+/// ```text
+/// extractpbo -PW source.pbo D:/output           # Extract all files
+/// extractpbo -PW -F=*.paa source.pbo D:/output  # Extract only .paa files
+/// extractpbo -L source.pbo                      # List contents
+/// ```
 ///
 /// Extraction behavior:
-/// 1. By default, creates a folder of the same name as the PBO in the same folder
-/// 2. For Arma PBOs, creates subfolders based on detected prefix:
-///    - Default: pbo thing.pbo -> thing/prefix/...
-///    - With -K: pbo thing.pbo -> destination/thing/...
-///    - With -k: pbo thing.pbo -> destination/thing/prefix/...
+/// 1. By default, creates a folder of the same name as the PBO in the destination
+/// 2. For Arma PBOs, creates additional subfolders based on the detected prefix
+///    Example: source.pbo -> destination/prefix/...
 ///
-/// Destination paths:
-/// - Must include drive letter (relative paths not supported)
-/// - Format: ExtractPBO [options] source.pbo D:/destination
+/// Notes:
+/// - Destination paths MUST include a drive letter (relative paths not supported)
+/// - The -F option's pattern is applied to the full file path within the PBO
+/// - Error codes and output messages are used to determine operation success
 
 // Combining the traits into a single trait to avoid trait object limitations
 pub trait ExtractorClone: Send + Sync + Debug {
@@ -51,49 +65,48 @@ impl DefaultExtractor {
         Self
     }
 
+    /// Execute the extractpbo command following the strict argument order:
+    /// 1. Core options (-PW)
+    /// 2. Operation-specific options (-F=pattern, -L, etc)
+    /// 3. PBO path
+    /// 4. Destination path (if any)
     fn run_extractpbo_command(&self, args: Vec<&str>, pbo_path: &Path) -> Result<ExtractResult> {
         debug!("Running extractpbo command with args: {:?}", args);
         debug!("PBO path: {:?}", pbo_path);
         
-        // Basic path validation
-        if !pbo_path.exists() || !pbo_path.is_file() {
-            return Err(PboError::InvalidPath(pbo_path.to_path_buf()));
-        }
-        
         let mut command = Command::new("extractpbo");
         
-        // Always add core flags first with proper prefix (universal options in lowercase)
-        command.args(["-p", "-w"]); // Don't pause and treat warnings as errors
+        // 1. Core options first (always used)
+        command.arg("-PW");  // Combined: Don't pause (-P) and treat warnings as errors (-W)
         
-        // Add all option flags first (anything starting with - or +)
+        // 2. Operation-specific options (like -F=pattern or -L)
+        let mut has_options = false;
         for arg in &args {
-            if arg.starts_with('+') || arg.starts_with('-') {
-                // Only convert universal options to lowercase
-                if arg.ends_with('P') || arg.ends_with('W') || arg.ends_with('?') || arg.ends_with('#') {
-                    if arg.starts_with('+') {
-                        command.arg(&format!("-{}", &arg[1..].to_lowercase()));
-                    } else {
-                        command.arg(&arg.to_lowercase());
-                    }
-                } else {
-                    // Keep special options in original case
-                    if arg.starts_with('+') {
-                        command.arg(&format!("-{}", &arg[1..]));
-                    } else {
-                        command.arg(arg);
-                    }
-                }
+            if arg.starts_with('-') {
+                command.arg(arg);
+                has_options = true;
             }
         }
+        if has_options {
+            debug!("Added operation-specific options");
+        }
 
-        // Add PBO path next
-        command.arg(pbo_path);
+        // 3. PBO path (required)
+        if let Some(pbo_str) = pbo_path.to_str() {
+            command.arg(pbo_str.replace("\\\\?\\", ""));
+            debug!("Added PBO path");
+        } else {
+            return Err(PboError::InvalidPath(pbo_path.to_path_buf()));
+        }
 
-        // Finally add destination path if present (any non-flag argument)
+        // 4. Destination path (if any non-flag args remain)
+        let mut added_dest = false;
         for arg in &args {
-            if !arg.starts_with('-') && !arg.starts_with('+') {
+            if !arg.starts_with('-') {
                 command.arg(arg);
-                break;
+                added_dest = true;
+                debug!("Added destination path");
+                break; // Only add the first non-flag argument as destination
             }
         }
 
@@ -122,7 +135,6 @@ impl DefaultExtractor {
     }
 }
 
-// Keep only the ExtractorClone implementation
 impl ExtractorClone for DefaultExtractor {
     fn extract(&self, pbo_path: &Path, output_dir: &Path, file_filter: Option<&str>) -> Result<ExtractResult> {
         debug!("DefaultExtractor::extract called");
@@ -130,24 +142,30 @@ impl ExtractorClone for DefaultExtractor {
         debug!("Output dir: {:?}", output_dir);
         debug!("File filter: {:?}", file_filter);
         
-        let mut command_args = Vec::new();
-        
-        if let Some(filter) = file_filter {
-            command_args.push(format!("-F={}", filter));
+        // Create output directory if it doesn't exist
+        if !output_dir.exists() {
+            std::fs::create_dir_all(output_dir).map_err(|_e| PboError::InvalidPath(output_dir.to_path_buf()))?;
         }
         
-        // Ensure output dir has a drive letter
-        if let Some(out_str) = output_dir.to_str() {
-            if !out_str.contains(':') {
-                warn!("Output path should include drive letter: {}", out_str);
-                return Err(PboError::InvalidPath(output_dir.to_path_buf()));
-            }
-            command_args.push(out_str.to_string());
+        let mut args = Vec::new();
+        
+        // Add filter if present
+        if let Some(filter) = file_filter {
+            args.push(format!("-F={}", filter));
+        }
+        
+        // Add output directory
+        if let Some(out_str) = output_dir.canonicalize()
+            .ok()
+            .and_then(|p| p.to_str().map(|s| s.replace("\\\\?\\", "")))
+        {
+            args.push(out_str);
         } else {
             return Err(PboError::InvalidPath(output_dir.to_path_buf()));
         }
         
-        let args: Vec<&str> = command_args.iter().map(|s| s.as_str()).collect();
+        // Convert args to string slices for command
+        let args: Vec<&str> = args.iter().map(AsRef::as_ref).collect();
         debug!("Calling run_extractpbo_command with args: {:?}", args);
         self.run_extractpbo_command(args, pbo_path)
     }
@@ -157,12 +175,9 @@ impl ExtractorClone for DefaultExtractor {
         debug!("PBO path: {:?}", pbo_path);
         debug!("Brief: {}", brief);
         
-        let flag = if brief { "-LB" } else { "-L" };
-        let args = vec![flag.to_string()];
-        let args_ref: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
-        
-        debug!("Calling run_extractpbo_command with flag: {}", flag);
-        self.run_extractpbo_command(args_ref, pbo_path)
+        let args = if brief { vec!["-LB"] } else { vec!["-L"] };
+        debug!("Calling run_extractpbo_command with args: {:?}", args);
+        self.run_extractpbo_command(args, pbo_path)
     }
 
     fn clone_box(&self) -> Box<dyn ExtractorClone> {

@@ -77,6 +77,8 @@ impl ExtractResult {
             "Mikero=",
             "version=",
             "PboType=",
+            "===",
+            "//",
         ];
 
         let should_skip = line.is_empty() || skip_patterns.iter().any(|&pattern| line.contains(pattern));
