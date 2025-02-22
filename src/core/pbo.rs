@@ -1,7 +1,7 @@
 use std::path::Path;
 use super::config::PboConfig;
 use crate::error::types::{PboError, Result};
-use crate::extract::{ExtractorClone, DefaultExtractor, ExtractResult};
+use crate::extract::{ExtractorClone, DefaultExtractor, ExtractResult, ExtractOptions};
 use crate::fs::TempFileManager;
 use super::api::PboApiOps;
 
@@ -39,16 +39,43 @@ impl PboCore {
 impl PboApiOps for PboCore {
     fn list_contents(&self, pbo_path: &Path) -> Result<ExtractResult> {
         self.validate_pbo_exists(pbo_path)?;
-        self.extractor.list_contents(pbo_path, false)
+        let options = ExtractOptions {
+            no_pause: true,
+            warnings_as_errors: true,
+            ..Default::default()
+        };
+        self.extractor.list_with_options(pbo_path, options)
     }
 
     fn list_contents_brief(&self, pbo_path: &Path) -> Result<ExtractResult> {
         self.validate_pbo_exists(pbo_path)?;
-        self.extractor.list_contents(pbo_path, true)
+        let options = ExtractOptions {
+            no_pause: true,
+            warnings_as_errors: true,
+            brief_listing: true,
+            ..Default::default()
+        };
+        self.extractor.list_with_options(pbo_path, options)
     }
 
     fn extract_files(&self, pbo_path: &Path, output_dir: &Path, file_filter: Option<&str>) -> Result<ExtractResult> {
         self.validate_pbo_exists(pbo_path)?;
-        self.extractor.extract(pbo_path, output_dir, file_filter)
+        let options = ExtractOptions {
+            no_pause: true,
+            warnings_as_errors: true,
+            file_filter: file_filter.map(String::from),
+            ..Default::default()
+        };
+        self.extractor.extract_with_options(pbo_path, output_dir, options)
+    }
+
+    fn list_with_options(&self, pbo_path: &Path, options: ExtractOptions) -> Result<ExtractResult> {
+        self.validate_pbo_exists(pbo_path)?;
+        self.extractor.list_with_options(pbo_path, options)
+    }
+
+    fn extract_with_options(&self, pbo_path: &Path, output_dir: &Path, options: ExtractOptions) -> Result<ExtractResult> {
+        self.validate_pbo_exists(pbo_path)?;
+        self.extractor.extract_with_options(pbo_path, output_dir, options)
     }
 }

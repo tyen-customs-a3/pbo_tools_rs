@@ -4,17 +4,85 @@ use std::sync::{mpsc, Arc};
 use std::thread;
 use log::{debug, warn};
 use crate::error::types::{Result, PboError, ExtractError};
-use crate::extract::{ExtractResult, ExtractorClone, DefaultExtractor};
+use crate::extract::{ExtractResult, ExtractorClone, DefaultExtractor, ExtractOptions};
 use crate::fs::{TempFileManager, FileOperation};
 use super::config::PboConfig;
 use super::constants::DEFAULT_TIMEOUT;
 
+/// Core trait defining operations available for PBO files.
+/// 
+/// This trait provides the main interface for working with PBO files, including:
+/// - Listing contents (with various detail levels)
+/// - Extracting files (with filtering and customization options)
+/// - Advanced operations with custom options
+///
+/// # Examples
+///
+/// ```no_run
+/// use pbo_tools_rs::core::{PboApi, PboApiOps};
+/// use std::path::Path;
+///
+/// let api = PboApi::new(30); // 30 second timeout
+/// let pbo_path = Path::new("mission.pbo");
+///
+/// // List contents
+/// let result = api.list_contents(&pbo_path).unwrap();
+/// println!("Files in PBO: {:?}", result.get_file_list());
+///
+/// // Extract specific files
+/// let output_dir = Path::new("output");
+/// api.extract_files(&pbo_path, &output_dir, Some("*.cpp")).unwrap();
+/// ```
 pub trait PboApiOps {
+    /// List contents of a PBO file with standard output format
     fn list_contents(&self, pbo_path: &Path) -> Result<ExtractResult>;
+    
+    /// List contents of a PBO file in brief directory-style format
     fn list_contents_brief(&self, pbo_path: &Path) -> Result<ExtractResult>;
+    
+    /// Extract files from a PBO with optional file filtering
     fn extract_files(&self, pbo_path: &Path, output_dir: &Path, file_filter: Option<&str>) -> Result<ExtractResult>;
+    
+    /// List contents with custom options for fine-grained control
+    fn list_with_options(&self, pbo_path: &Path, options: ExtractOptions) -> Result<ExtractResult>;
+    
+    /// Extract files with custom options for fine-grained control
+    fn extract_with_options(&self, pbo_path: &Path, output_dir: &Path, options: ExtractOptions) -> Result<ExtractResult>;
 }
 
+/// Main API for working with PBO files.
+///
+/// PboApi provides a high-level interface for PBO operations with:
+/// - Configurable timeout handling
+/// - Custom configuration options
+/// - Error handling and validation
+/// - Progress tracking and logging
+///
+/// # Examples
+///
+/// Basic usage:
+/// ```no_run
+/// use pbo_tools_rs::core::PboApi;
+///
+/// let api = PboApi::builder()
+///     .with_timeout(30)
+///     .build();
+/// ```
+///
+/// Advanced configuration:
+/// ```no_run
+/// use pbo_tools_rs::core::{PboApi, PboConfig};
+///
+/// let config = PboConfig::builder()
+///     .case_sensitive(true)
+///     .max_retries(5)
+///     .build();
+///
+/// let api = PboApi::builder()
+///     .with_config(config)
+///     .with_timeout(30)
+///     .build();
+/// ```
 #[derive(Debug, Clone)]
 pub struct PboApi {
     temp_manager: TempFileManager,
@@ -47,7 +115,22 @@ impl PboApi {
     }
 
     fn validate_pbo_exists(&self, pbo_path: &Path) -> Result<()> {
-        pbo_path.validate_path()
+        if !pbo_path.exists() {
+            return Err(PboError::InvalidPath(pbo_path.to_path_buf()));
+        }
+        Ok(())
+    }
+
+    fn validate_output_dir(&self, output_dir: &Path) -> Result<()> {
+        if !output_dir.exists() {
+            // Try to create it
+            if let Some(parent) = output_dir.parent() {
+                if !parent.exists() {
+                    return Err(PboError::InvalidPath(output_dir.to_path_buf()));
+                }
+            }
+        }
+        Ok(())
     }
 
     fn with_timeout<T, F>(&self, operation: F) -> Result<T>
@@ -110,13 +193,43 @@ impl PboApi {
 
 impl PboApiOps for PboApi {
     fn list_contents(&self, pbo_path: &Path) -> Result<ExtractResult> {
+        let options = ExtractOptions {
+            no_pause: true,
+            warnings_as_errors: true,
+            ..Default::default()
+        };
+        self.list_with_options(pbo_path, options)
+    }
+
+    fn list_contents_brief(&self, pbo_path: &Path) -> Result<ExtractResult> {
+        let options = ExtractOptions {
+            no_pause: true,
+            warnings_as_errors: true,
+            brief_listing: true,
+            ..Default::default()
+        };
+        self.list_with_options(pbo_path, options)
+    }
+
+    fn extract_files(&self, pbo_path: &Path, output_dir: &Path, file_filter: Option<&str>) -> Result<ExtractResult> {
+        let options = ExtractOptions {
+            no_pause: true,
+            warnings_as_errors: true,
+            file_filter: file_filter.map(String::from),
+            ..Default::default()
+        };
+        self.extract_with_options(pbo_path, output_dir, options)
+    }
+
+    fn list_with_options(&self, pbo_path: &Path, options: ExtractOptions) -> Result<ExtractResult> {
         self.validate_pbo_exists(pbo_path)?;
         let pbo_path = pbo_path.to_owned();
         let extractor = self.extractor.clone();
+        let options = options.clone();
         
         self.with_timeout(move || {
-            debug!("Listing contents of PBO: {}", pbo_path.display());
-            let result = extractor.list_contents(&pbo_path, false)?;
+            debug!("Listing contents of PBO with options: {:?}", options);
+            let result = extractor.list_with_options(&pbo_path, options)?;
             
             if !result.is_success() {
                 debug!("PBO listing failed: {}", result);
@@ -131,31 +244,33 @@ impl PboApiOps for PboApi {
         })
     }
 
-    fn list_contents_brief(&self, pbo_path: &Path) -> Result<ExtractResult> {
+    fn extract_with_options(&self, pbo_path: &Path, output_dir: &Path, options: ExtractOptions) -> Result<ExtractResult> {
         self.validate_pbo_exists(pbo_path)?;
-        let pbo_path = pbo_path.to_owned();
-        let extractor = self.extractor.clone();
+        self.validate_output_dir(output_dir)?;
         
-        self.with_timeout(move || {
-            debug!("Listing contents briefly of PBO: {}", pbo_path.display());
-            extractor.list_contents(&pbo_path, true)
-        })
-    }
-
-    fn extract_files(&self, pbo_path: &Path, output_dir: &Path, file_filter: Option<&str>) -> Result<ExtractResult> {
-        self.validate_pbo_exists(pbo_path)?;
-        output_dir.ensure_parent_exists()?;
+        // Validate file filter
+        if let Some(filter) = &options.file_filter {
+            if filter.trim().is_empty() {
+                return Err(PboError::ValidationFailed("File filter cannot be empty".to_string()));
+            }
+            
+            // Validate regex patterns specifically (patterns that don't use glob wildcards)
+            if !filter.contains('*') && !filter.contains('?') {
+                // If it's not a glob pattern, treat it as regex and validate it
+                if let Err(_) = regex::Regex::new(filter) {
+                    return Err(PboError::ValidationFailed(format!("Invalid file filter pattern: {}", filter)));
+                }
+            }
+        }
         
         let pbo_path = pbo_path.to_owned();
         let output_dir = output_dir.to_owned();
-        let file_filter = file_filter.map(String::from);
         let extractor = self.extractor.clone();
+        let options = options.clone();
         
         self.with_timeout(move || {
-            debug!("Extracting files from PBO: {} to {}", pbo_path.display(), output_dir.display());
-            debug!("Using filter: {:?}", file_filter);
-            
-            let result = extractor.extract(&pbo_path, &output_dir, file_filter.as_deref())?;
+            debug!("Extracting files with options: {:?}", options);
+            let result = extractor.extract_with_options(&pbo_path, &output_dir, options)?;
             
             if !result.is_success() {
                 debug!("PBO extraction failed: {}", result);
@@ -171,6 +286,22 @@ impl PboApiOps for PboApi {
     }
 }
 
+/// Builder for creating customized PboApi instances.
+///
+/// The builder pattern allows for flexible configuration of:
+/// - Operation timeout
+/// - PBO handling configuration
+/// - Custom extractors (for testing or specialized use cases)
+///
+/// # Examples
+///
+/// ```no_run
+/// use pbo_tools_rs::core::PboApi;
+///
+/// let api = PboApi::builder()
+///     .with_timeout(60)  // 60 second timeout
+///     .build();
+/// ```
 #[derive(Default)]
 pub struct PboApiBuilder {
     config: Option<PboConfig>,

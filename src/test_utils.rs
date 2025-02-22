@@ -16,10 +16,11 @@ pub fn setup() {
 }
 
 pub fn get_test_pbo_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests")
-        .join("data")
-        .join("mirrorform.pbo")
+    PathBuf::from("tests/data/mirrorform.pbo")
+}
+
+pub fn get_test_data_dir() -> PathBuf {
+    PathBuf::from("tests/data")
 }
 
 #[cfg(test)]

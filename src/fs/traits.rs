@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::fs::{create_dir_all, remove_dir_all, remove_file};
 use log::{debug, warn};
 use crate::error::types::{Result, PboError, FileSystemError};
@@ -10,40 +10,17 @@ pub trait FileOperation {
     fn is_safe_path(&self) -> bool;
     fn ensure_directory(&self) -> Result<()>;
     fn validate_filename(&self) -> Result<()>;
+    fn validate_path_safety(&self) -> Result<()>;
 }
 
 impl FileOperation for Path {
     fn validate_path(&self) -> Result<()> {
-        debug!("Validating path: {}", self.display());
-        
-        // For source PBO files, check existence
-        if self.extension().map_or(false, |ext| ext == "pbo") {
-            debug!("Checking PBO file existence");
-            if !self.exists() {
-                warn!("PBO file not found: {}", self.display());
-                return Err(PboError::InvalidPath(self.to_path_buf()));
-            }
-        }
-        
-        // For all paths, check safety and filename validity
-        if !self.is_safe_path() {
-            warn!("Path failed safety check: {}", self.display());
-            return Err(PboError::InvalidPath(self.to_path_buf()));
-        }
-
-        match self.validate_filename() {
-            Ok(_) => debug!("Filename validation passed for: {}", self.display()),
-            Err(e) => {
-                warn!("Filename validation failed for {}: {:?}", self.display(), e);
-                return Err(e);
-            }
-        }
-
-        debug!("Path validation successful: {}", self.display());
-        Ok(())
+        self.validate_path_safety()
     }
 
     fn ensure_parent_exists(&self) -> Result<()> {
+        self.validate_path_safety()?;
+        
         if let Some(parent) = self.parent() {
             if !parent.exists() {
                 create_dir_all(parent)
@@ -161,7 +138,7 @@ impl FileOperation for Path {
                 
                 if reserved.iter().any(|&r| filename_str.eq_ignore_ascii_case(r)) {
                     return Err(PboError::FileSystem(FileSystemError::InvalidFileName(
-                        self.to_path_buf()
+                        self.to_string_lossy().into_owned()
                     )));
                 }
             }
@@ -170,10 +147,39 @@ impl FileOperation for Path {
             if filename_str.starts_with('.') || filename_str.ends_with('.') || 
                filename_str.starts_with(' ') || filename_str.ends_with(' ') {
                 return Err(PboError::FileSystem(FileSystemError::InvalidFileName(
-                    self.to_path_buf()
+                    self.to_string_lossy().into_owned()
                 )));
             }
         }
+        Ok(())
+    }
+
+    fn validate_path_safety(&self) -> Result<()> {
+        // Convert path to string for validation
+        let path_str = self.to_string_lossy();
+
+        // Check for invalid characters
+        let invalid_chars = ['<', '>', '|', '"', '*', '?'];
+        if path_str.contains(&invalid_chars[..]) {
+            return Err(PboError::FileSystem(FileSystemError::PathValidation(
+                format!("Path contains invalid characters: {}", path_str)
+            )));
+        }
+
+        // Check for reasonable path length
+        if path_str.len() > 260 {
+            return Err(PboError::FileSystem(FileSystemError::PathValidation(
+                format!("Path exceeds maximum length (260): {}", path_str)
+            )));
+        }
+
+        // Check for parent directory traversal
+        if path_str.contains("..") {
+            return Err(PboError::FileSystem(FileSystemError::PathValidation(
+                format!("Path contains parent directory traversal: {}", path_str)
+            )));
+        }
+
         Ok(())
     }
 }

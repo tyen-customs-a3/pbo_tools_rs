@@ -18,15 +18,37 @@ pub enum Commands {
     List {
         /// Path to PBO file
         pbo_path: PathBuf,
+
+        /// Use brief directory-style output listing
+        #[arg(short, long)]
+        brief: bool,
+
+        /// Enable verbose output
+        #[arg(short, long)]
+        verbose: bool,
     },
     /// Extract PBO file contents
     Extract {
         /// Path to PBO file
         pbo_path: PathBuf,
+
         /// Output directory
         output_dir: PathBuf,
+
         /// Optional filter for specific files
         #[arg(short, long)]
         filter: Option<String>,
+
+        /// Keep PBO name in output path
+        #[arg(short, long)]
+        keep_pbo_name: bool,
+
+        /// Enable verbose output
+        #[arg(short, long)]
+        verbose: bool,
+
+        /// Don't treat warnings as errors
+        #[arg(short = 'w', long)]
+        ignore_warnings: bool,
     },
 }

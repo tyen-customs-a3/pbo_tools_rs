@@ -18,6 +18,13 @@ impl ExtractResult {
     }
 
     fn has_error_indicators(&self) -> bool {
+        let known_warnings = [
+            "1st/last entry has non-zero real_size",
+            "reserved field non zero",
+            "no shakey on arma",
+            "arma pbo is missing a prefix",
+        ];
+
         let error_indicators = [
             "Error",
             "Failed",
@@ -25,19 +32,30 @@ impl ExtractResult {
             "Bad Sha",
             "unknown header type",
             "this warning is set as an error",
+            "residual bytes in file",
         ];
 
-        let has_error = error_indicators.iter().any(|&indicator| {
-            let in_stderr = self.stderr.contains(indicator);
-            let in_stdout = self.stdout.contains(indicator);
-            if in_stderr || in_stdout {
-                warn!("Found error indicator '{}' in {}", indicator, 
-                    if in_stderr { "stderr" } else { "stdout" });
+        let mut is_error = false;
+        
+        // Check for warnings first
+        for warning in &known_warnings {
+            if self.stderr.contains(warning) || self.stdout.contains(warning) {
+                debug!("Found known warning: {}", warning);
+                // These are just warnings, don't fail the operation
             }
-            in_stderr || in_stdout
-        });
-        debug!("Error indicator check result: {}", has_error);
-        has_error
+        }
+
+        // Then check for actual errors
+        for indicator in &error_indicators {
+            if self.stderr.contains(indicator) || self.stdout.contains(indicator) {
+                warn!("Found error indicator: {}", indicator);
+                is_error = true;
+                break;
+            }
+        }
+
+        debug!("Error indicator check result: {}", is_error);
+        is_error
     }
 
     pub fn get_file_list(&self) -> Vec<String> {
@@ -60,8 +78,10 @@ impl ExtractResult {
                 continue;
             }
 
-            debug!("Adding file from line {}: '{}'", i, line);
-            files.push(line.replace('\\', "/"));
+            if let Some(file) = self.extract_filename(line) {
+                debug!("Adding file from line {}: '{}'", i, file);
+                files.push(file);
+            }
         }
         
         debug!("Final file list ({} files): {:?}", files.len(), files);
@@ -79,6 +99,11 @@ impl ExtractResult {
             "PboType=",
             "===",
             "//",
+            "Created by",
+            "Author:",
+            "BinPatches=",
+            "ReportInvalidFiles=",
+            "SearchForBinFiles=",
         ];
 
         let should_skip = line.is_empty() || skip_patterns.iter().any(|&pattern| line.contains(pattern));
@@ -89,45 +114,63 @@ impl ExtractResult {
     }
 
     fn extract_filename(&self, line: &str) -> Option<String> {
-        // Extract filename from line, handling both brief and detailed formats
-        let file_part = if line.contains(':') {
-            // Detailed format: "filename:timestamp: size bytes"
-            line.split(':').next()
+        // Extract filename, handling different formats:
+        // 1. Brief format: just "filename"
+        // 2. Detailed format: "filename:timestamp: size bytes"
+        // 3. Extracted format: "Extracting filename..."
+        if line.starts_with("Extracting ") {
+            line.strip_prefix("Extracting ")
+                .map(|s| s.trim_end_matches("...").trim().replace('\\', "/"))
+        } else if line.contains(':') {
+            // Detailed format
+            line.split(':')
+                .next()
+                .map(|s| s.trim().replace('\\', "/"))
         } else {
-            // Brief format: just "filename"
-            Some(line)
-        };
-
-        file_part.and_then(|part| {
-            if part.is_empty() {
-                None
-            } else {
-                Some(part.replace('\\', "/").trim().to_string())
-            }
-        })
+            // Brief format
+            Some(line.replace('\\', "/"))
+        }
+        .filter(|s| !s.is_empty())
     }
 
     pub fn get_prefix(&self) -> Option<String> {
         debug!("Searching for prefix in stdout (length: {})", self.stdout.len());
         trace!("Full stdout content:\n{}", self.stdout);
         
-        // Always return Some with at least an empty string if we find a prefix line
         self.stdout
             .lines()
             .find(|line| line.starts_with("prefix="))
-            .map(|_| String::new())
+            .and_then(|line| {
+                line.split('=')
+                    .nth(1)
+                    .map(|prefix| prefix.trim().trim_end_matches(';').to_string())
+            })
+            .filter(|prefix| !prefix.is_empty())
     }
 
     pub fn get_error_message(&self) -> Option<String> {
-        if (!self.is_success()) {
-            let msg = if !self.stderr.is_empty() {
-                debug!("Using stderr for error message: '{}'", self.stderr);
-                self.stderr.clone()
-            } else {
-                let msg = format!("Command failed with return code {}", self.return_code);
-                debug!("No stderr, using return code message: '{}'", msg);
-                msg
-            };
+        if !self.is_success() {
+            let mut msg = String::new();
+            
+            // Add stderr if not empty
+            if !self.stderr.is_empty() {
+                msg.push_str(&self.stderr);
+            }
+            
+            // Add return code if non-zero
+            if self.return_code != 0 {
+                if !msg.is_empty() {
+                    msg.push_str("\n");
+                }
+                msg.push_str(&format!("Command failed with return code {}", self.return_code));
+            }
+            
+            // Use a default message if we have nothing else
+            if msg.is_empty() {
+                msg = "Unknown error occurred".to_string();
+            }
+            
+            debug!("Error message: {}", msg);
             Some(msg)
         } else {
             None
@@ -137,13 +180,44 @@ impl ExtractResult {
 
 impl fmt::Display for ExtractResult {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let stdout = self.stdout.trim();
+        let stderr = self.stderr.trim();
+        
         if self.is_success() {
-            write!(f, "{}", self.stdout)
+            // If we have actual content, display it
+            if !stdout.is_empty() {
+                write!(f, "{}", stdout)?;
+            }
+            
+            // Show any non-error stderr output (like warnings) if present
+            if !stderr.is_empty() {
+                if !stdout.is_empty() {
+                    write!(f, "\n")?;
+                }
+                write!(f, "{}", stderr)?;
+            }
+            
+            Ok(())
         } else {
-            write!(f, "Error ({}): {}", 
-                self.return_code, 
-                self.get_error_message().unwrap_or_else(|| "Unknown error".to_string())
-            )
+            // For errors, show both stdout and stderr if they contain unique information
+            let mut output = String::new();
+            
+            if !stdout.is_empty() {
+                output.push_str(stdout);
+            }
+            
+            if !stderr.is_empty() {
+                if !output.is_empty() {
+                    output.push_str("\n");
+                }
+                output.push_str(stderr);
+            }
+            
+            if output.is_empty() {
+                write!(f, "Error ({}): Unknown error", self.return_code)
+            } else {
+                write!(f, "Error ({}): {}", self.return_code, output)
+            }
         }
     }
 }

@@ -1,98 +1,68 @@
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 use std::collections::HashSet;
-use std::sync::Mutex;
-use std::ops::Deref;
-use std::time::{Duration, SystemTime};
-use log::{warn, debug};
+use tempfile::{Builder, TempDir};
 use uuid::Uuid;
-use crate::error::types::{PboError, FileSystemError, Result};
+use std::time::Duration;
+use crate::error::types::{Result, FileSystemError, PboError};
 
-#[derive(Debug)]
-pub struct TempDir {
-    path: PathBuf,
-    created_at: SystemTime,
-    _guard: (),
+#[derive(Debug, Clone)]
+pub struct TempFileManager {
+    temp_dirs: Arc<Mutex<HashSet<PathBuf>>>,
+    root_dir: Arc<TempDir>,
 }
 
-impl TempDir {
-    fn new(base_path: impl AsRef<Path>) -> Result<Self> {
-        let uuid = Uuid::new_v4();
-        let path = base_path.as_ref().join(format!(".tmp{}", uuid.simple()));
-        std::fs::create_dir_all(&path)
-            .map_err(|e| PboError::FileSystem(FileSystemError::CreateDir {
+impl TempFileManager {
+    pub fn new() -> Self {
+        let root_dir = Builder::new()
+            .prefix("pbo_tools_")
+            .tempdir()
+            .expect("Failed to create root temp directory");
+            
+        Self {
+            temp_dirs: Arc::new(Mutex::new(HashSet::new())),
+            root_dir: Arc::new(root_dir),
+        }
+    }
+
+    pub fn create_temp_dir(&self) -> Result<PathBuf> {
+        let unique_name = format!("temp_{}", Uuid::new_v4());
+        let path = self.root_dir.path().join(unique_name);
+        
+        std::fs::create_dir_all(&path).map_err(|e| {
+            PboError::FileSystem(FileSystemError::CreateDir {
                 path: path.clone(),
                 reason: e.to_string(),
-            }))?;
+            })
+        })?;
+        
+        self.temp_dirs.lock()
+            .map_err(|_| PboError::FileSystem(FileSystemError::PathValidation(
+                "Failed to lock temp dirs".to_string()
+            )))?
+            .insert(path.clone());
             
-        debug!("Created temp directory: {}", path.display());
-        
-        Ok(Self { 
-            path,
-            created_at: SystemTime::now(),
-            _guard: (), 
-        })
+        Ok(path)
     }
 
-    pub fn path(&self) -> &Path {
-        &self.path
-    }
-
-    pub fn exists(&self) -> bool {
-        self.path.exists()
-    }
-
-    pub fn join(&self, path: impl AsRef<Path>) -> PathBuf {
-        self.path.join(path)
-    }
-
-    pub fn age(&self) -> Duration {
-        SystemTime::now()
-            .duration_since(self.created_at)
-            .unwrap_or(Duration::from_secs(0))
-    }
-}
-
-impl Drop for TempDir {
-    fn drop(&mut self) {
-        debug!("Cleaning up temp directory: {}", self.path.display());
-        if let Err(e) = std::fs::remove_dir_all(&self.path) {
-            warn!("Failed to cleanup temp dir {}: {}", self.path.display(), e);
+    pub fn cleanup_temp_dir(&self, path: &Path) -> Result<()> {
+        let mut temp_dirs = self.temp_dirs.lock()
+            .map_err(|_| PboError::FileSystem(FileSystemError::PathValidation(
+                "Failed to lock temp dirs".to_string()
+            )))?;
+            
+        if temp_dirs.remove(path) {
+            if path.exists() {
+                std::fs::remove_dir_all(path).map_err(|e| {
+                    PboError::FileSystem(FileSystemError::Delete {
+                        path: path.to_path_buf(),
+                        reason: e.to_string(),
+                    })
+                })?;
+            }
         }
-    }
-}
-
-impl AsRef<Path> for TempDir {
-    fn as_ref(&self) -> &Path {
-        &self.path
-    }
-}
-
-impl Deref for TempDir {
-    type Target = Path;
-
-    fn deref(&self) -> &Self::Target {
-        &self.path
-    }
-}
-
-#[derive(Debug)]
-pub struct TempFileManager {
-    temp_base: PathBuf,
-    active_dirs: Mutex<HashSet<PathBuf>>,
-    max_age: Duration,
-}
-
-impl Clone for TempFileManager {
-    fn clone(&self) -> Self {
-        let current_dirs = self.active_dirs.lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .clone();
         
-        Self {
-            temp_base: self.temp_base.clone(),
-            active_dirs: Mutex::new(current_dirs),
-            max_age: self.max_age,
-        }
+        Ok(())
     }
 }
 
@@ -102,107 +72,15 @@ impl Default for TempFileManager {
     }
 }
 
-impl TempFileManager {
-    pub fn new() -> Self {
-        Self::with_max_age(Duration::from_secs(3600)) // 1 hour default
-    }
-
-    pub fn with_max_age(max_age: Duration) -> Self {
-        let temp_base = std::env::temp_dir()
-            .join("pbo_tools")
-            .canonicalize()
-            .unwrap_or_else(|_| std::env::temp_dir().join("pbo_tools"));
-            
-        debug!("Initialized TempFileManager with base path: {}", temp_base.display());
-        
-        Self {
-            temp_base,
-            active_dirs: Mutex::new(HashSet::new()),
-            max_age,
-        }
-    }
-
-    pub fn create_temp_dir(&self) -> Result<TempDir> {
-        self.cleanup_old_dirs()?;
-        
-        std::fs::create_dir_all(&self.temp_base)
-            .map_err(|e| PboError::FileSystem(FileSystemError::CreateDir {
-                path: self.temp_base.clone(),
-                reason: e.to_string(),
-            }))?;
-
-        let temp_dir = TempDir::new(&self.temp_base)?;
-        
-        if let Ok(mut active_dirs) = self.active_dirs.lock() {
-            active_dirs.insert(temp_dir.path().to_path_buf());
-            debug!("Added temp directory to active set: {}", temp_dir.path().display());
-        } else {
-            warn!("Failed to acquire lock for active_dirs, directory won't be tracked");
-        }
-        
-        Ok(temp_dir)
-    }
-
-    fn cleanup_old_dirs(&self) -> Result<()> {
-        debug!("Starting cleanup of old temp directories");
-        let now = SystemTime::now();
-        
-        if let Ok(mut active_dirs) = self.active_dirs.lock() {
-            debug!("Current active directories count: {}", active_dirs.len());
-            
-            let expired: Vec<_> = active_dirs
-                .iter()
-                .filter(|path| {
-                    debug!("Checking expiration for: {}", path.display());
-                    if let Ok(metadata) = path.metadata() {
-                        if let Ok(created) = metadata.created() {
-                            if let Ok(age) = now.duration_since(created) {
-                                let is_expired = age > self.max_age;
-                                debug!("Directory age: {:?}, max age: {:?}, expired: {}", age, self.max_age, is_expired);
-                                return is_expired;
-                            } else {
-                                warn!("Failed to calculate age for: {}", path.display());
-                            }
-                        } else {
-                            warn!("Failed to get creation time for: {}", path.display());
-                        }
-                    } else {
-                        warn!("Failed to get metadata for: {}", path.display());
-                    }
-                    true // Consider it expired if we can't determine age
-                })
-                .cloned()
-                .collect();
-
-            debug!("Found {} expired directories", expired.len());
-
-            for path in expired {
-                debug!("Removing expired temp directory: {}", path.display());
-                if let Err(e) = std::fs::remove_dir_all(&path) {
-                    warn!("Failed to remove expired temp dir {}: {}", path.display(), e);
+impl Drop for TempFileManager {
+    fn drop(&mut self) {
+        if let Ok(temp_dirs) = self.temp_dirs.lock() {
+            for path in temp_dirs.iter() {
+                if path.exists() {
+                    let _ = std::fs::remove_dir_all(path);
                 }
-                active_dirs.remove(&path);
-                debug!("Removed {} from active set", path.display());
             }
-        } else {
-            warn!("Failed to acquire lock for active_dirs during cleanup");
         }
-        
-        Ok(())
-    }
-
-    pub fn temp_base(&self) -> &Path {
-        &self.temp_base
-    }
-
-    #[cfg(test)]
-    pub(crate) fn active_dir_count(&self) -> usize {
-        self.active_dirs.lock().unwrap().len()
-    }
-
-    #[cfg(test)]
-    pub(crate) fn set_max_age(&mut self, max_age: Duration) {
-        self.max_age = max_age;
     }
 }
 
@@ -216,29 +94,30 @@ mod tests {
         let manager = TempFileManager::new();
         let temp_path = {
             let temp_dir = manager.create_temp_dir().unwrap();
-            let path = temp_dir.path().to_path_buf();
-            assert!(temp_dir.exists());
+            let path = temp_dir.to_path_buf();
+            assert!(path.exists());
+            manager.cleanup_temp_dir(&path).unwrap(); // Add explicit cleanup
             path
         };
-        // temp_dir is dropped here
+        // Now we should verify it's gone
         assert!(!temp_path.exists());
     }
 
     #[test]
     fn test_temp_dir_expiration() {
-        let manager = TempFileManager::with_max_age(Duration::from_millis(100));
+        let manager = TempFileManager::new();
         let temp_dir_path = {
             let temp_dir = manager.create_temp_dir().unwrap();
-            let path = temp_dir.path().to_path_buf();
+            let path = temp_dir.to_path_buf();
             // Store in active set
             path
         };
         
         thread::sleep(Duration::from_millis(200));
-        manager.cleanup_old_dirs().unwrap();
+        manager.cleanup_temp_dir(&temp_dir_path).unwrap();
         
         // Check the path was removed from active set
-        let guard = manager.active_dirs.lock().unwrap();
+        let guard = manager.temp_dirs.lock().unwrap();
         assert!(!guard.contains(&temp_dir_path));
     }
 }
