@@ -3,7 +3,7 @@ use super::config::PboConfig;
 use crate::error::types::{PboError, Result};
 use crate::extract::{ExtractorClone, DefaultExtractor, ExtractResult};
 use crate::fs::TempFileManager;
-use super::api::PboApi;
+use super::api::PboApiOps;
 
 #[derive(Debug, Clone)]
 pub struct PboCore {
@@ -36,7 +36,7 @@ impl PboCore {
     }
 }
 
-impl PboApi for PboCore {
+impl PboApiOps for PboCore {
     fn list_contents(&self, pbo_path: &Path) -> Result<ExtractResult> {
         self.validate_pbo_exists(pbo_path)?;
         self.extractor.list_contents(pbo_path, false)

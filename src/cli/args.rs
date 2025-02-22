@@ -12,7 +12,7 @@ pub struct Cli {
     pub timeout: u32,
 }
 
-#[derive(Subcommand)]
+#[derive(Subcommand, Debug)]
 pub enum Commands {
     /// List contents of PBO file
     List {

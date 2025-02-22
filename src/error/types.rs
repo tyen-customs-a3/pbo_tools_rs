@@ -31,6 +31,15 @@ pub enum PboError {
 
     #[error("Invalid path: {0}")]
     InvalidPath(PathBuf),
+
+    #[error("Operation was interrupted: {0}")]
+    Interrupted(String),
+
+    #[error("Permission denied: {0}")]
+    PermissionDenied(PathBuf),
+
+    #[error("Resource busy: {0}")]
+    ResourceBusy(PathBuf),
 }
 
 #[derive(Error, Debug)]
@@ -51,6 +60,12 @@ pub enum ExtractError {
 
     #[error("Extraction canceled: {0}")]
     Canceled(String),
+
+    #[error("Invalid file in PBO: {0}")]
+    InvalidFile(String),
+
+    #[error("Checksum verification failed for: {0}")]
+    ChecksumFailed(String),
 }
 
 #[derive(Error, Debug)]
@@ -79,4 +94,29 @@ pub enum FileSystemError {
         path: PathBuf,
         reason: String,
     },
+
+    #[error("Failed to write file {path}: {reason}")]
+    Write {
+        path: PathBuf,
+        reason: String,
+    },
+
+    #[error("Failed to copy file from {from} to {to}: {reason}")]
+    Copy {
+        from: PathBuf,
+        to: PathBuf,
+        reason: String,
+    },
+
+    #[error("Path not found: {0}")]
+    NotFound(PathBuf),
+
+    #[error("Path already exists: {0}")]
+    AlreadyExists(PathBuf),
+
+    #[error("Invalid file name: {0}")]
+    InvalidFileName(PathBuf),
+
+    #[error("Temporary directory error: {0}")]
+    TempDir(String),
 }
