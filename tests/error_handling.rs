@@ -1,6 +1,6 @@
-use pbo_tools_rs::core::{PboApi, PboApiOps};
-use pbo_tools_rs::extract::ExtractOptions;
-use pbo_tools_rs::error::types::{PboError, ExtractError};
+use pbo_tools::core::{PboApi, PboApiOps};
+use pbo_tools::extract::ExtractOptions;
+use pbo_tools::error::types::{PboError, ExtractError};
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 

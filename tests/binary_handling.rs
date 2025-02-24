@@ -1,5 +1,5 @@
-use pbo_tools_rs::core::{PboConfig, PboApi, PboApiOps};
-use pbo_tools_rs::fs::{convert_binary_file, process_binary_files};
+use pbo_tools::core::{PboConfig, PboApi, PboApiOps};
+use pbo_tools::fs::{convert_binary_file, process_binary_files};
 use std::path::Path;
 use tempfile::TempDir;
 use std::fs;

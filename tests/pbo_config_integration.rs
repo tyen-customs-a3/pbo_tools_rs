@@ -1,4 +1,4 @@
-use pbo_tools_rs::core::{PboApi, PboConfig, PboApiOps};
+use pbo_tools::core::{PboApi, PboConfig, PboApiOps};
 use std::path::Path;
 
 #[test]

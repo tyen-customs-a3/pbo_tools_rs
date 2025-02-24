@@ -1,5 +1,5 @@
-use pbo_tools_rs::core::{PboApi, PboApiOps};
-use pbo_tools_rs::extract::ExtractOptions;
+use pbo_tools::core::{PboApi, PboApiOps};
+use pbo_tools::extract::ExtractOptions;
 use std::path::Path;
 use tempfile::TempDir;
 use std::fs;
@@ -157,4 +157,91 @@ fn test_list_with_custom_options() {
     
     let files = result.get_file_list();
     assert!(!files.is_empty());
+}
+
+#[test]
+fn test_headgear_pumpkin_integration() {
+    let (api, temp_dir) = setup();
+    let test_pbo = Path::new("tests/data/headgear_pumpkin.pbo");
+    
+    // First list the contents
+    let list_result = api.list_contents(test_pbo).unwrap();
+    assert!(list_result.is_success());
+    assert!(!list_result.stdout.is_empty());
+    debug!("PBO contents:\n{}", list_result.stdout);
+    
+    // Now extract all files
+    let output_dir = temp_dir.path().join("headgear_pumpkin");
+    let extract_result = api.extract_files(test_pbo, &output_dir, None).unwrap();
+    assert!(extract_result.is_success());
+    assert!(output_dir.exists());
+    
+    // Verify extracted files using WalkDir for recursive directory traversal
+    let entries: Vec<_> = walkdir::WalkDir::new(&output_dir)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().is_file())
+        .collect();
+    
+    debug!("Extracted files:");
+    for entry in &entries {
+        debug!("  - {}", entry.path().display());
+    }
+    
+    assert!(!entries.is_empty(), "Expected files to be extracted");
+    
+    // Check for expected file types (common Arma 3 asset files)
+    let has_config = entries.iter().any(|e| e.path().to_string_lossy().contains("config.cpp"));
+    let has_paa = entries.iter().any(|e| 
+        e.path().extension().map_or(false, |ext| ext == "paa")
+    );
+    let has_pboprefix = entries.iter().any(|e| 
+        e.file_name().to_string_lossy() == "$PBOPREFIX$.txt"
+    );
+    
+    assert!(has_config, "Expected config.cpp file");
+    assert!(has_paa, "Expected at least one .paa texture file");
+    assert!(has_pboprefix, "Expected $PBOPREFIX$.txt file");
+}
+
+#[test]
+fn test_headgear_pumpkin_extract_cpp() {
+    let (api, temp_dir) = setup();
+    let test_pbo = Path::new("tests/data/headgear_pumpkin.pbo");
+    let output_dir = temp_dir.path().join("headgear_pumpkin_cpp");
+    
+    // Extract only the config.bin file which should be converted to .cpp
+    let result = api.extract_files(test_pbo, &output_dir, Some("config.bin")).unwrap();
+    assert!(result.is_success());
+    assert!(output_dir.exists());
+    
+    // Verify extracted files using WalkDir
+    let entries: Vec<_> = walkdir::WalkDir::new(&output_dir)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().is_file())
+        .collect();
+    
+    debug!("Extracted files:");
+    for entry in &entries {
+        debug!("  - {}", entry.path().display());
+    }
+    
+    // Should have config.cpp (converted from config.bin) and $PBOPREFIX$.txt
+    assert_eq!(entries.len(), 2, "Expected exactly 2 files (config.cpp and $PBOPREFIX$.txt)");
+    
+    let has_config = entries.iter().any(|e| e.path().to_string_lossy().contains("config.cpp"));
+    let has_pboprefix = entries.iter().any(|e| 
+        e.file_name().to_string_lossy() == "$PBOPREFIX$.txt"
+    );
+    
+    assert!(has_config, "Expected config.cpp file (converted from config.bin)");
+    assert!(has_pboprefix, "Expected $PBOPREFIX$.txt file");
+    
+    // Verify no other files were extracted
+    let has_other = entries.iter().any(|e| {
+        let name = e.file_name().to_string_lossy();
+        !name.contains("config.cpp") && name != "$PBOPREFIX$.txt"
+    });
+    assert!(!has_other, "No other files should have been extracted");
 }
