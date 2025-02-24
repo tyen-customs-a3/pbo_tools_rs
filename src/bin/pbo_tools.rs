@@ -2,9 +2,9 @@ use std::process;
 use env_logger;
 use log::error;
 use clap::Parser;
-use pbo_tools_rs::cli::args::Cli;
-use pbo_tools_rs::cli::CliProcessor;
-use pbo_tools_rs::core::constants::DEFAULT_TIMEOUT;
+use pbo_tools::cli::args::Cli;
+use pbo_tools::cli::CliProcessor;
+use pbo_tools::core::constants::DEFAULT_TIMEOUT;
 
 fn main() {
     env_logger::init();

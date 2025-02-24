@@ -1,5 +1,5 @@
 [package]
-name = "pbo_tools_rs"
+name = "pbo_tools"
 version = "0.1.0"
 edition = "2021"
 description = "A Rust library for working with PBO (Packed Bundle Object) files"

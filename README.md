@@ -25,7 +25,7 @@ Before using this tool, ensure you have:
 To install the CLI tool:
 
 ```bash
-cargo install pbo_tools_rs
+cargo install pbo_tools
 ```
 
 ## Usage
@@ -53,7 +53,7 @@ Options:
 
 Basic usage:
 ```rust
-use pbo_tools_rs::core::PboApi;
+use pbo_tools::core::PboApi;
 use std::path::Path;
 
 let api = PboApi::builder()
@@ -72,7 +72,7 @@ api.extract_files(&pbo_path, &output_dir, Some("*.cpp")).unwrap();
 
 Advanced configuration:
 ```rust
-use pbo_tools_rs::core::{PboApi, PboConfig};
+use pbo_tools::core::{PboApi, PboConfig};
 
 let config = PboConfig::builder()
     .case_sensitive(true)

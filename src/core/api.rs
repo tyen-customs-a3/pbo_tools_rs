@@ -19,7 +19,7 @@ use super::constants::DEFAULT_TIMEOUT;
 /// # Examples
 ///
 /// ```no_run
-/// use pbo_tools_rs::core::{PboApi, PboApiOps};
+/// use pbo_tools::core::{PboApi, PboApiOps};
 /// use std::path::Path;
 ///
 /// let api = PboApi::new(30); // 30 second timeout
@@ -62,7 +62,7 @@ pub trait PboApiOps {
 ///
 /// Basic usage:
 /// ```no_run
-/// use pbo_tools_rs::core::PboApi;
+/// use pbo_tools::core::PboApi;
 ///
 /// let api = PboApi::builder()
 ///     .with_timeout(30)
@@ -71,7 +71,7 @@ pub trait PboApiOps {
 ///
 /// Advanced configuration:
 /// ```no_run
-/// use pbo_tools_rs::core::{PboApi, PboConfig};
+/// use pbo_tools::core::{PboApi, PboConfig};
 ///
 /// let config = PboConfig::builder()
 ///     .case_sensitive(true)
@@ -296,7 +296,7 @@ impl PboApiOps for PboApi {
 /// # Examples
 ///
 /// ```no_run
-/// use pbo_tools_rs::core::PboApi;
+/// use pbo_tools::core::PboApi;
 ///
 /// let api = PboApi::builder()
 ///     .with_timeout(60)  // 60 second timeout
