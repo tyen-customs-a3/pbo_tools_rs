@@ -13,7 +13,7 @@ impl ExtractResult {
     pub fn is_success(&self) -> bool {
         let return_code_ok = self.return_code == 0;
         let no_errors = !self.has_error_indicators();
-        debug!("Checking extraction success - return code: {}, has errors: {}", self.return_code, !no_errors);
+        trace!("Checking extraction success - return code: {}, has errors: {}", self.return_code, !no_errors);
         return_code_ok && no_errors
     }
 
@@ -53,14 +53,15 @@ impl ExtractResult {
                 break;
             }
         }
-
-        debug!("Error indicator check result: {}", is_error);
+        if is_error {
+            debug!("Error indicator check result: {}", is_error);
+        }
         is_error
     }
 
     pub fn get_file_list(&self) -> Vec<String> {
         let mut files = Vec::new();
-        debug!("Processing stdout for file list, stdout length: {}", self.stdout.len());
+        trace!("Processing stdout for file list, stdout length: {}", self.stdout.len());
         trace!("Stdout contents:\n{}", self.stdout);
         trace!("Stderr contents:\n{}", self.stderr);
 
@@ -74,17 +75,17 @@ impl ExtractResult {
             }
             
             if self.should_skip_line(line) {
-                debug!("Skipping metadata line {}: '{}'", i, line);
+                trace!("Skipping metadata line {}: '{}'", i, line);
                 continue;
             }
 
             if let Some(file) = self.extract_filename(line) {
-                debug!("Adding file from line {}: '{}'", i, file);
+                trace!("Adding file from line {}: '{}'", i, file);
                 files.push(file);
             }
         }
         
-        debug!("Final file list ({} files): {:?}", files.len(), files);
+        trace!("Final file list ({} files): {:?}", files.len(), files);
         files
     }
 

@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::fmt::Debug;
 use std::process::Command;
-use log::{debug, warn};
+use log::{debug, trace, warn};
 use crate::error::types::{Result, PboError, ExtractError, FileSystemError};
 use crate::core::constants::{COMMON_PBO_EXTENSIONS, BAD_PBO_INDICATORS};
 use super::result::ExtractResult;
@@ -202,13 +202,12 @@ impl DefaultExtractor {
             }
         }
         if has_options {
-            debug!("Added operation-specific options");
+            trace!("Added operation-specific options");
         }
 
         // 3. PBO path (required)
         if let Some(pbo_str) = pbo_path.to_str() {
             command.arg(pbo_str.replace("\\\\?\\", ""));
-            debug!("Added PBO path");
         } else {
             return Err(PboError::InvalidPath(pbo_path.to_path_buf()));
         }
@@ -231,17 +230,17 @@ impl DefaultExtractor {
             }
         }
 
-        debug!("Full command: {:?}", command);
+        trace!("Full command: {:?}", command);
         
         // Execute command with proper error handling
         match command.output() {
             Ok(output) => {
-                debug!("Command completed with status: {:?}", output.status);
+                trace!("Command completed with status: {:?}", output.status);
                 let stdout = String::from_utf8_lossy(&output.stdout);
                 let stderr = String::from_utf8_lossy(&output.stderr);
                 
-                debug!("Stdout: {}", stdout);
-                debug!("Stderr: {}", stderr);
+                trace!("Stdout: {}", stdout);
+                trace!("Stderr: {}", stderr);
 
                 // Check for specific error patterns in the output
                 if BAD_PBO_INDICATORS.iter().any(|&indicator| {
@@ -318,9 +317,9 @@ impl ExtractorClone for DefaultExtractor {
     }
 
     fn list_with_options(&self, pbo_path: &Path, options: ExtractOptions) -> Result<ExtractResult> {
-        debug!("DefaultExtractor::list_with_options called");
-        debug!("PBO path: {:?}", pbo_path);
-        debug!("Options: {:?}", options);
+        trace!("DefaultExtractor::list_with_options called");
+        trace!("PBO path: {:?}", pbo_path);
+        trace!("Options: {:?}", options);
         
         options.validate()?;
 
@@ -340,10 +339,10 @@ impl ExtractorClone for DefaultExtractor {
     }
 
     fn extract(&self, pbo_path: &Path, output_dir: &Path, file_filter: Option<&str>) -> Result<ExtractResult> {
-        debug!("DefaultExtractor::extract called");
-        debug!("PBO path: {:?}", pbo_path);
-        debug!("Output dir: {:?}", output_dir);
-        debug!("File filter: {:?}", file_filter);
+        trace!("DefaultExtractor::extract called");
+        trace!("PBO path: {:?}", pbo_path);
+        trace!("Output dir: {:?}", output_dir);
+        trace!("File filter: {:?}", file_filter);
         
         // Create output directory if it doesn't exist
         if !output_dir.exists() {
