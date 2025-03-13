@@ -85,6 +85,10 @@ impl ExtractResult {
             }
         }
         
+        // Remove duplicates and sort for consistent output
+        files.sort();
+        files.dedup();
+        
         trace!("Final file list ({} files): {:?}", files.len(), files);
         files
     }
@@ -105,6 +109,10 @@ impl ExtractResult {
             "BinPatches=",
             "ReportInvalidFiles=",
             "SearchForBinFiles=",
+            "hemtt=",
+            "git=",
+            "Opening",
+            "$PBOPREFIX$",
         ];
 
         let should_skip = line.is_empty() || skip_patterns.iter().any(|&pattern| line.contains(pattern));
@@ -119,19 +127,23 @@ impl ExtractResult {
         // 1. Brief format: just "filename"
         // 2. Detailed format: "filename:timestamp: size bytes"
         // 3. Extracted format: "Extracting filename..."
-        if line.starts_with("Extracting ") {
+        let filename = if line.starts_with("Extracting ") {
             line.strip_prefix("Extracting ")
-                .map(|s| s.trim_end_matches("...").trim().replace('\\', "/"))
+                .map(|s| s.trim_end_matches("...").trim())
         } else if line.contains(':') {
             // Detailed format
             line.split(':')
                 .next()
-                .map(|s| s.trim().replace('\\', "/"))
+                .map(|s| s.trim())
         } else {
             // Brief format
-            Some(line.replace('\\', "/"))
-        }
-        .filter(|s| !s.is_empty())
+            Some(line.trim())
+        };
+
+        filename
+            .map(|s| s.replace('\\', "/"))
+            .filter(|s| !s.is_empty())
+            .filter(|s| !s.contains("hemtt=") && !s.contains("git="))
     }
 
     pub fn get_prefix(&self) -> Option<String> {
