@@ -1,11 +1,11 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::Duration;
 use std::sync::{mpsc, Arc};
 use std::thread;
 use log::{debug, warn};
 use crate::error::types::{Result, PboError, ExtractError};
 use crate::extract::{ExtractResult, ExtractorClone, DefaultExtractor, ExtractOptions};
-use crate::fs::{TempFileManager, FileOperation};
+use crate::fs::TempFileManager;
 use super::config::PboConfig;
 use super::constants::DEFAULT_TIMEOUT;
 

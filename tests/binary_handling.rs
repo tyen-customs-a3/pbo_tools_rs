@@ -1,9 +1,9 @@
-use pbo_tools::core::{PboConfig, PboApi, PboApiOps};
+use pbo_tools::core::PboConfig;
 use pbo_tools::fs::{convert_binary_file, process_binary_files};
 use std::path::Path;
 use tempfile::TempDir;
 use std::fs;
-use log::{info, debug};
+use log::debug;
 
 fn init() {
     let _ = env_logger::builder()

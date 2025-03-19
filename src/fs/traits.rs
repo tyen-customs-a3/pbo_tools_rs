@@ -1,6 +1,6 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::fs::{create_dir_all, remove_dir_all, remove_file};
-use log::{debug, warn};
+use log::debug;
 use crate::error::types::{Result, PboError, FileSystemError};
 
 pub trait FileOperation {

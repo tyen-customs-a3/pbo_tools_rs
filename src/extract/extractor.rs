@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::fmt::Debug;
 use std::process::Command;
-use log::{debug, trace, warn};
+use log::{debug, trace};
 use crate::error::types::{Result, PboError, ExtractError, FileSystemError};
 use crate::core::constants::{COMMON_PBO_EXTENSIONS, BAD_PBO_INDICATORS};
 use super::result::ExtractResult;
@@ -215,7 +215,7 @@ impl DefaultExtractor {
         // 4. Destination path (if any non-flag args remain)
         let mut _added_dest = false;
         for arg in &args {
-            if (!arg.starts_with('-')) {
+            if !arg.starts_with('-') {
                 // Validate destination path
                 let dest_path = Path::new(arg);
                 if dest_path.to_str().map_or(true, |s| s.contains(['<', '>', '|', '"', '\''])) {

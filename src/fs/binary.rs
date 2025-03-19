@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use log::{debug, info};
 use crate::error::types::{PboError, FileSystemError, Result};
 use std::fs;
@@ -43,7 +43,7 @@ pub fn convert_binary_file(input: &Path, output: &Path) -> Result<()> {
 }
 
 pub fn process_binary_files(source_dir: &Path, config: &PboConfig) -> Result<()> {
-    if (!source_dir.is_dir()) {
+    if !source_dir.is_dir() {
         debug!("Source directory {:?} is not a directory", source_dir);
         return Ok(());
     }
