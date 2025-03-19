@@ -86,7 +86,7 @@ impl Drop for TempFileManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::thread;
+    use std::{thread, time::Duration};
 
     #[test]
     fn test_temp_dir_cleanup() {
