@@ -1,4 +1,3 @@
-use std::process;
 use env_logger;
 use log::error;
 use clap::Parser;

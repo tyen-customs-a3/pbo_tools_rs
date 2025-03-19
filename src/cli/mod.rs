@@ -5,7 +5,7 @@ use log::debug;
 use crate::core::api::{PboApi, PboApiOps};
 use crate::error::types::{Result, PboError};
 use crate::extract::ExtractOptions;
-use self::args::{Commands, Cli};
+use self::args::Commands;
 
 pub struct CliProcessor {
     api: PboApi,
